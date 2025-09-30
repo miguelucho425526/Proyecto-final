@@ -1,22 +1,58 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database import Base, engine, SessionLocal
-import models
+from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy.orm import relationship
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from pydantic import BaseModel
-import hashlib  # 👈 USA HASHLIB NATIVO en lugar de bcrypt
+import hashlib
+from typing import List
 
-# 👇 FUNCIONES DE PASSWORD SIMPLIFICADAS
-def get_password_hash(password: str) -> str:
-    """Hash de contraseña usando SHA256"""
-    salt = "recetas_app_salt_2024"
-    return hashlib.sha256((password + salt).encode()).hexdigest()
+# ==================== CONFIGURACIÓN BASE DE DATOS ====================
+SQLITE_DATABASE_URL = "sqlite:///./recetas.db"
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verificar contraseña"""
-    return get_password_hash(plain_password) == hashed_password
+engine = create_engine(
+    SQLITE_DATABASE_URL, connect_args={"check_same_thread": False}
+)
 
-# Modelos Pydantic para autenticación
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# ==================== MODELOS SQLALCHEMY ====================
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    password = Column(String)
+    phone = Column(Integer)
+    email = Column(String, unique=True, index=True)
+
+    recetas = relationship("Receta", back_populates="autor")
+
+class Receta(Base):
+    __tablename__ = "recetas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String, index=True)
+    descripcion = Column(Text)
+    ingredientes = Column(Text)
+    pasos_preparacion = Column(Text)
+    autor_id = Column(Integer, ForeignKey("usuarios.id"))
+
+    autor = relationship("Usuario", back_populates="recetas")
+
+# ==================== MODELOS PYDANTIC ====================
 class UserRegister(BaseModel):
     username: str
     email: str
@@ -34,15 +70,30 @@ class UserResponse(BaseModel):
     phone: int
 
     class Config:
-        from_attributes = True  # 👈 Cambiado de orm_mode
+        from_attributes = True
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class RecetaResponse(BaseModel):
+    id: int
+    titulo: str
+    descripcion: str
+    ingredientes: str
+    pasos_preparacion: str
+    autor_id: int
 
+    class Config:
+        from_attributes = True
+
+# ==================== FUNCIONES DE SEGURIDAD ====================
+def get_password_hash(password: str) -> str:
+    """Hash de contraseña usando SHA256"""
+    salt = "recetas_app_salt_2024"
+    return hashlib.sha256((password + salt).encode()).hexdigest()
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verificar contraseña"""
+    return get_password_hash(plain_password) == hashed_password
+
+# ==================== APLICACIÓN FASTAPI ====================
 # Crear las tablas en la base de datos
 Base.metadata.create_all(bind=engine)
 
@@ -61,17 +112,18 @@ app.add_middleware(
     allow_headers=["*"],  
 )
 
+# ==================== DATOS DE EJEMPLO ====================
 def crear_datos_ejemplo():
     """Crear datos de ejemplo si no existen"""
     db = SessionLocal()
     try:
         # Verificar si ya existe el usuario
-        usuario = db.query(models.Usuario).first()
+        usuario = db.query(Usuario).first()
         if not usuario:
             # Crear usuario de ejemplo con contraseña hasheada
-            nuevo_usuario = models.Usuario(
+            nuevo_usuario = Usuario(
                 username="admin",
-                password=get_password_hash("admin123"),  # 👈 USA NUESTRA FUNCIÓN
+                password=get_password_hash("admin123"),
                 phone=123456789,
                 email="admin@recetas.com"
             )
@@ -80,10 +132,10 @@ def crear_datos_ejemplo():
             print("✅ Usuario por defecto creado")
         
         # Verificar si ya existen recetas
-        recetas = db.query(models.Receta).first()
+        recetas = db.query(Receta).first()
         if not recetas:
             # Crear recetas de ejemplo
-            receta1 = models.Receta(
+            receta1 = Receta(
                 titulo="Pasta al Pesto",
                 descripcion="Pasta con salsa pesto casera",
                 ingredientes="Pasta, Albahaca, Ajo, Piñones, Aceite de oliva, Queso parmesano",
@@ -91,7 +143,7 @@ def crear_datos_ejemplo():
                 autor_id=1
             )
             
-            receta2 = models.Receta(
+            receta2 = Receta(
                 titulo="Ensalada Mediterránea", 
                 descripcion="Ensalada fresca con ingredientes del mediterráneo",
                 ingredientes="Tomate, Pepino, Aceitunas, Queso feta, Cebolla roja, Aceite de oliva, Limón",
@@ -113,15 +165,14 @@ def crear_datos_ejemplo():
 # Crear datos de ejemplo
 crear_datos_ejemplo()
 
-# 👇 ENDPOINTS DE AUTENTICACIÓN
-
+# ==================== ENDPOINTS DE AUTENTICACIÓN ====================
 @app.post("/auth/register", response_model=UserResponse)
 def register_user(user: UserRegister, db: Session = Depends(get_db)):
     try:
         # Verificar si el usuario ya existe
-        existing_user = db.query(models.Usuario).filter(
-            (models.Usuario.username == user.username) | 
-            (models.Usuario.email == user.email)
+        existing_user = db.query(Usuario).filter(
+            (Usuario.username == user.username) | 
+            (Usuario.email == user.email)
         ).first()
         
         if existing_user:
@@ -131,10 +182,10 @@ def register_user(user: UserRegister, db: Session = Depends(get_db)):
             )
         
         # Crear nuevo usuario
-        new_user = models.Usuario(
+        new_user = Usuario(
             username=user.username,
             email=user.email,
-            password=get_password_hash(user.password),  # 👈 USA NUESTRA FUNCIÓN
+            password=get_password_hash(user.password),
             phone=user.phone
         )
         
@@ -154,8 +205,8 @@ def register_user(user: UserRegister, db: Session = Depends(get_db)):
 def login_user(user: UserLogin, db: Session = Depends(get_db)):
     try:
         # Buscar usuario
-        db_user = db.query(models.Usuario).filter(
-            models.Usuario.username == user.username
+        db_user = db.query(Usuario).filter(
+            Usuario.username == user.username
         ).first()
         
         if not db_user or not verify_password(user.password, db_user.password):
@@ -171,8 +222,28 @@ def login_user(user: UserLogin, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en el login: {str(e)}")
 
-# 👇 ENDPOINTS EXISTENTES DE RECETAS
+# ==================== ENDPOINTS DE USUARIOS ====================
+@app.get("/usuarios/", response_model=List[UserResponse])
+def get_usuarios(db: Session = Depends(get_db)):
+    """Obtener todos los usuarios"""
+    try:
+        usuarios = db.query(Usuario).all()
+        return usuarios
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener usuarios: {str(e)}")
 
+@app.get("/usuarios/{usuario_id}", response_model=UserResponse)
+def get_usuario(usuario_id: int, db: Session = Depends(get_db)):
+    """Obtener un usuario específico por ID"""
+    try:
+        usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+        if not usuario:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        return usuario
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener usuario: {str(e)}")
+
+# ==================== ENDPOINTS DE RECETAS ====================
 @app.get("/")
 def root():
     return {
@@ -180,41 +251,39 @@ def root():
         "version": "1.0.0",
         "endpoints": {
             "recetas": "/api/recetas/",
+            "usuarios": "/usuarios/",
             "autenticación": "/auth/",
             "documentación": "/docs"
         }
     }
 
-@app.get("/api/recetas/")
-def get_recetas():
-    db = SessionLocal()
+@app.get("/api/recetas/", response_model=List[RecetaResponse])
+def get_recetas(db: Session = Depends(get_db)):
     try:
-        recetas = db.query(models.Receta).all()
+        recetas = db.query(Receta).all()
         return recetas
-    finally:
-        db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener recetas: {str(e)}")
 
-@app.get("/api/recetas/{receta_id}")
-def get_receta(receta_id: int):
-    db = SessionLocal()
+@app.get("/api/recetas/{receta_id}", response_model=RecetaResponse)
+def get_receta(receta_id: int, db: Session = Depends(get_db)):
     try:
-        receta = db.query(models.Receta).filter(models.Receta.id == receta_id).first()
+        receta = db.query(Receta).filter(Receta.id == receta_id).first()
         if not receta:
-            return {"error": "Receta no encontrada"}
+            raise HTTPException(status_code=404, detail="Receta no encontrada")
         return receta
-    finally:
-        db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al obtener receta: {str(e)}")
 
-@app.post("/api/recetas/")
-def crear_receta(receta: dict):
-    db = SessionLocal()
+@app.post("/api/recetas/", response_model=RecetaResponse)
+def crear_receta(receta_data: dict, db: Session = Depends(get_db)):
     try:
-        nueva_receta = models.Receta(
-            titulo=receta.get("titulo", ""),
-            descripcion=receta.get("descripcion", ""),
-            ingredientes=receta.get("ingredientes", ""),
-            pasos_preparacion=receta.get("pasos_preparacion", ""),
-            autor_id=receta.get("autor_id", 1)
+        nueva_receta = Receta(
+            titulo=receta_data.get("titulo", ""),
+            descripcion=receta_data.get("descripcion", ""),
+            ingredientes=receta_data.get("ingredientes", ""),
+            pasos_preparacion=receta_data.get("pasos_preparacion", ""),
+            autor_id=receta_data.get("autor_id", 1)
         )
         db.add(nueva_receta)
         db.commit()
@@ -222,48 +291,42 @@ def crear_receta(receta: dict):
         return nueva_receta
     except Exception as e:
         db.rollback()
-        return {"error": f"No se pudo crear la receta: {str(e)}"}
-    finally:
-        db.close()
+        raise HTTPException(status_code=500, detail=f"No se pudo crear la receta: {str(e)}")
 
-@app.put("/api/recetas/{receta_id}")
-def actualizar_receta(receta_id: int, receta: dict):
-    db = SessionLocal()
+@app.put("/api/recetas/{receta_id}", response_model=RecetaResponse)
+def actualizar_receta(receta_id: int, receta_data: dict, db: Session = Depends(get_db)):
     try:
-        receta_db = db.query(models.Receta).filter(models.Receta.id == receta_id).first()
+        receta_db = db.query(Receta).filter(Receta.id == receta_id).first()
         if not receta_db:
-            return {"error": "Receta no encontrada"}
+            raise HTTPException(status_code=404, detail="Receta no encontrada")
         
-        receta_db.titulo = receta.get("titulo", receta_db.titulo)
-        receta_db.descripcion = receta.get("descripcion", receta_db.descripcion)
-        receta_db.ingredientes = receta.get("ingredientes", receta_db.ingredientes)
-        receta_db.pasos_preparacion = receta.get("pasos_preparacion", receta_db.pasos_preparacion)
+        receta_db.titulo = receta_data.get("titulo", receta_db.titulo)
+        receta_db.descripcion = receta_data.get("descripcion", receta_db.descripcion)
+        receta_db.ingredientes = receta_data.get("ingredientes", receta_db.ingredientes)
+        receta_db.pasos_preparacion = receta_data.get("pasos_preparacion", receta_db.pasos_preparacion)
         
         db.commit()
+        db.refresh(receta_db)
         return receta_db
     except Exception as e:
         db.rollback()
-        return {"error": f"No se pudo actualizar la receta: {str(e)}"}
-    finally:
-        db.close()
+        raise HTTPException(status_code=500, detail=f"No se pudo actualizar la receta: {str(e)}")
 
 @app.delete("/api/recetas/{receta_id}")
-def eliminar_receta(receta_id: int):
-    db = SessionLocal()
+def eliminar_receta(receta_id: int, db: Session = Depends(get_db)):
     try:
-        receta = db.query(models.Receta).filter(models.Receta.id == receta_id).first()
+        receta = db.query(Receta).filter(Receta.id == receta_id).first()
         if not receta:
-            return {"error": "Receta no encontrada"}
+            raise HTTPException(status_code=404, detail="Receta no encontrada")
         
         db.delete(receta)
         db.commit()
-        return {"mensaje": f"Receta '{receta.titulo}' eliminada"}
+        return {"mensaje": f"Receta '{receta.titulo}' eliminada correctamente"}
     except Exception as e:
         db.rollback()
-        return {"error": f"No se pudo eliminar la receta: {str(e)}"}
-    finally:
-        db.close()
+        raise HTTPException(status_code=500, detail=f"No se pudo eliminar la receta: {str(e)}")
 
+# ==================== ENDPOINTS DE SALUD ====================
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "Recetas API"}
@@ -276,14 +339,15 @@ def api_info():
         "tecnologias": ["FastAPI", "SQLite", "SQLAlchemy"],
         "desarrollado_por": "Tu equipo de desarrollo"
     }
-# 👇 CORRIGE ESTA PARTE - CAMBIA LA LÍNEA uvicorn.run
+
+# ==================== INICIO DEL SERVIDOR ====================
 if __name__ == "__main__":
     import uvicorn
     print("🚀 Servidor FastAPI iniciado!")
     print("📍 URL local: http://localhost:8000")
     print("📍 URL red: http://0.0.0.0:8000") 
     print("📚 Docs: http://localhost:8000/docs")
+    print("👥 Usuarios: http://localhost:8000/usuarios/")
     print("⏹️  Presiona CTRL+C para detener")
     
-    # ✅ FORMA CORRECTA - con reload
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
