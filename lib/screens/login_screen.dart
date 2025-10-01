@@ -59,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  // 👇 MÉTODO ACTUALIZADO CON AUTENTICACIÓN REAL
+  // 👇 MÉTODO ACTUALIZADO CON USER ID
   void _login() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -76,13 +76,14 @@ class _LoginScreenState extends State<LoginScreen>
           _isLoading = false;
         });
 
-        // Navegar al HomeScreen después del login exitoso
+        // 👇 Navegar al HomeScreen CON EL USER ID
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => HomeScreen(
             toggleTheme: () async {
               // Función temporal - se implementará después
             },
+            userId: user.id, // 👈 PASA EL USER ID AQUÍ
           )),
         );
 
@@ -333,7 +334,7 @@ class _LoginScreenState extends State<LoginScreen>
                                 ],
                               ),
 
-                              // 👇 NUEVO: Enlace para registro
+                              // 👇 Enlace para registro
                               SizedBox(height: 20),
                               Divider(color: Colors.grey.shade300),
                               SizedBox(height: 16),
@@ -359,6 +360,38 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                   ),
                                 ],
+                              ),
+
+                              // 👇 CREDENCIALES DE PRUEBA (OPCIONAL)
+                              SizedBox(height: 20),
+                              Container(
+                                padding: EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      'Credenciales de prueba:',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green.shade800,
+                                        fontFamily: 'Poppins',
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'Usuario: admin | Contraseña: admin123',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.green.shade700,
+                                        fontFamily: 'Poppins',
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),

@@ -1,21 +1,31 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../models/recipe.dart';
+import '../models/user.dart';
 import '../widgets/recipe_card.dart';
 import '../services/api_service.dart';
+import '../services/user_service.dart';
 import 'add_recipe_screen.dart';
 import 'recipe_detail_screen.dart';
-import 'login_screen.dart'; // 👈 IMPORTACIÓN AGREGADA
+import 'login_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final Future<void> Function() toggleTheme;
-  const HomeScreen({Key? key, required this.toggleTheme}) : super(key: key);
+  final int userId;
+  
+  const HomeScreen({
+    Key? key, 
+    required this.toggleTheme,
+    required this.userId,
+  }) : super(key: key);
 
   @override
   _HomeScreenState createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   List<Recipe> _recipes = [];
   bool _loading = true;
   String _error = '';
@@ -23,20 +33,23 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   late AnimationController _refreshController;
   bool _isRefreshing = false;
   bool _isLoading = false;
+  User? _currentUser;
+  bool _userLoading = true;
 
   @override
   void initState() {
     super.initState();
-    
+
     _refreshController = AnimationController(
       duration: Duration(milliseconds: 1000),
       vsync: this,
     );
-    
+
     Future.delayed(Duration(milliseconds: 100), () {
       _loadRecipesFromBackend();
+      _loadUserData();
     });
-    
+
     _startAutoRefresh();
   }
 
@@ -56,12 +69,27 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     });
   }
 
+  Future<void> _loadUserData() async {
+    try {
+      final user = await UserService.getUserById(widget.userId);
+      setState(() {
+        _currentUser = user;
+        _userLoading = false;
+      });
+    } catch (e) {
+      print('❌ Error cargando datos del usuario: $e');
+      setState(() {
+        _userLoading = false;
+      });
+    }
+  }
+
   Future<void> _loadRecipesFromBackend({bool silent = false}) async {
     if (_isLoading) {
       print('⏳ Ya se está cargando, ignorando llamada...');
       return;
     }
-    
+
     try {
       _isLoading = true;
       print("🏠 HomeScreen: Iniciando carga de recetas...");
@@ -73,17 +101,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         });
       }
 
-      final recipes = await ApiService.getRecetas()
-          .timeout(Duration(seconds: 10), onTimeout: () {
-        throw TimeoutException('La conexión tardó demasiado (10 segundos)');
-      });
+      final recipes = await ApiService.getRecetas().timeout(
+        Duration(seconds: 10),
+        onTimeout: () {
+          throw TimeoutException('La conexión tardó demasiado (10 segundos)');
+        },
+      );
 
       print("🏠 HomeScreen: Recetas cargadas: ${recipes.length}");
 
       if (!mounted) return;
 
       for (var recipe in recipes) {
-        print("🍳 Receta: ${recipe.title} - ${recipe.ingredients.length} ingredientes");
+        print(
+          "🍳 Receta: ${recipe.title} - ${recipe.ingredients.length} ingredientes",
+        );
       }
 
       if (mounted) {
@@ -95,25 +127,26 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
 
       print("🏠 HomeScreen: Estado actualizado");
-      
     } on TimeoutException catch (e) {
       print("⏰ HomeScreen: TIMEOUT: $e");
       if (!mounted) return;
-      
+
       setState(() {
         _error = 'Tiempo de espera agotado. Verifica tu conexión.';
         _loading = false;
       });
-      
+
       if (!silent) {
-        _showSnackBar('Error: El servidor no respondió a tiempo', Colors.orange);
+        _showSnackBar(
+          'Error: El servidor no respondió a tiempo',
+          Colors.orange,
+        );
       }
-      
     } catch (e) {
       print("❌ HomeScreen: ERROR: $e");
-      
+
       if (!mounted) return;
-      
+
       setState(() {
         _error = 'Error al cargar recetas: ${e.toString()}';
         _loading = false;
@@ -141,7 +174,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   void _showSnackBar(String message, Color color) {
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -164,9 +197,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _addRecipe() async {
-    final newRecipe = await Navigator.of(context).push<Recipe>(
-      MaterialPageRoute(builder: (_) => AddRecipeScreen())
-    );
+    final newRecipe = await Navigator.of(
+      context,
+    ).push<Recipe>(MaterialPageRoute(builder: (_) => AddRecipeScreen()));
 
     if (newRecipe != null && mounted) {
       try {
@@ -174,9 +207,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           _loading = true;
         });
 
-        final createdRecipe = await ApiService.crearReceta(newRecipe)
-            .timeout(Duration(seconds: 10));
-            
+        final createdRecipe = await ApiService.crearReceta(
+          newRecipe,
+        ).timeout(Duration(seconds: 10));
+
         if (mounted) {
           setState(() {
             _recipes.insert(0, createdRecipe);
@@ -199,7 +233,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   void _toggleFavorite(String recipeId) {
     if (!mounted) return;
-    
+
     setState(() {
       _recipes = _recipes.map((recipe) {
         if (recipe.id == recipeId) {
@@ -246,9 +280,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     if (confirmed == true && mounted) {
       try {
-        await ApiService.eliminarReceta(recipe.id)
-            .timeout(Duration(seconds: 10));
-            
+        await ApiService.eliminarReceta(
+          recipe.id,
+        ).timeout(Duration(seconds: 10));
+
         if (mounted) {
           setState(() {
             _recipes.removeAt(index);
@@ -288,7 +323,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _refreshController.stop();
   }
 
-  // 👇 MÉTODO PARA CONFIRMAR CERRAR SESIÓN
+  void _navigateToProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(userId: widget.userId),
+      ),
+    );
+  }
+
   void _confirmLogout() {
     showDialog(
       context: context,
@@ -311,10 +354,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancelar',
-                style: TextStyle(fontFamily: 'Poppins'),
-              ),
+              child: Text('Cancelar', style: TextStyle(fontFamily: 'Poppins')),
             ),
             TextButton(
               onPressed: () {
@@ -336,20 +376,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // 👇 MÉTODO MODIFICADO PARA EJECUTAR EL CIERRE DE SESIÓN
   void _performLogout() {
-    // Cerrar el drawer primero
     if (Navigator.canPop(context)) {
       Navigator.pop(context);
     }
-    
-    // Mostrar mensaje de confirmación
+
     _showSnackBar('Sesión cerrada exitosamente', Colors.green);
-    
-    // Simular cierre de sesión
+
     print('🔐 Sesión cerrada - Usuario desconectado');
-    
-    // Navegar a la pantalla de login después de un breve delay
+
     Future.delayed(Duration(milliseconds: 1500), () {
       Navigator.pushReplacement(
         context,
@@ -375,7 +410,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             children: [
               IconButton(
                 icon: RotationTransition(
-                  turns: Tween(begin: 0.0, end: 1.0).animate(_refreshController),
+                  turns: Tween(
+                    begin: 0.0,
+                    end: 1.0,
+                  ).animate(_refreshController),
                   child: Icon(Icons.refresh_rounded),
                 ),
                 onPressed: _isLoading ? null : _manualRefresh,
@@ -433,7 +471,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              height: 160,
+              height: 180,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [Colors.green.shade700, Colors.green.shade500],
@@ -445,21 +483,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 60,
-                    height: 60,
+                    width: 80,
+                    height: 80,
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.9),
                       shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
                     ),
                     child: Icon(
-                      Icons.restaurant_menu_rounded,
-                      size: 32,
+                      Icons.person_rounded,
+                      size: 40,
                       color: Colors.green.shade700,
                     ),
                   ),
                   SizedBox(height: 12),
                   Text(
-                    'Recetas App',
+                    _userLoading 
+                      ? 'Cargando...' 
+                      : _currentUser?.username ?? 'Mi Perfil',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 20,
@@ -469,11 +510,39 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ),
                   SizedBox(height: 4),
                   Text(
-                    'Usuario Actual',
+                    _userLoading 
+                      ? '' 
+                      : _currentUser?.email ?? 'Usuario',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.8),
                       fontSize: 14,
                       fontFamily: 'Poppins',
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Container(
+                    height: 36,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _navigateToProfile();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                      ),
+                      child: Text(
+                        'Ver Perfil',
+                        style: TextStyle(
+                          fontSize: 12, 
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -488,6 +557,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     icon: Icons.home_rounded,
                     title: 'Inicio',
                     onTap: () => Navigator.pop(context),
+                  ),
+                  _buildDrawerItem(
+                    icon: Icons.person_rounded,
+                    title: 'Mi Perfil',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _navigateToProfile();
+                    },
                   ),
                   _buildDrawerItem(
                     icon: Icons.add_circle_rounded,
@@ -513,44 +590,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       _showSnackBar('Configuración en desarrollo', Colors.blue);
                     },
                   ),
-                  _buildDrawerItem(
-                    icon: Icons.info_rounded,
-                    title: 'Acerca de',
-                    onTap: () {
-                      Navigator.pop(context);
-                      showAboutDialog(
-                        context: context,
-                        applicationName: 'Recetas App',
-                        applicationVersion: '1.0',
-                        applicationIcon: Container(
-                          width: 50,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade100,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.restaurant_menu_rounded,
-                            color: Colors.green.shade700,
-                          ),
-                        ),
-                        children: [
-                          SizedBox(height: 16),
-                          Text(
-                            'App con actualización automática cada 15 segundos',
-                            style: TextStyle(fontFamily: 'Poppins'),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  
+
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Divider(color: Colors.grey.shade300),
                   ),
-                  
+
                   _buildDrawerItem(
                     icon: Icons.logout_rounded,
                     title: 'Cerrar Sesión',
@@ -604,7 +649,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     Color? color,
   }) {
     final itemColor = color ?? Colors.green.shade700;
-    
+
     return ListTile(
       leading: Container(
         width: 40,
@@ -642,7 +687,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               'Cargando recetas...',
               style: TextStyle(
                 fontFamily: 'Poppins',
-                color: Theme.of(context).colorScheme.onBackground.withOpacity(0.6),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onBackground.withOpacity(0.6),
               ),
             ),
           ],
@@ -686,7 +733,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Poppins',
-                  color: Theme.of(context).colorScheme.onBackground.withOpacity(0.6),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onBackground.withOpacity(0.6),
                 ),
               ),
               SizedBox(height: 24),
@@ -741,7 +790,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Poppins',
-                  color: Theme.of(context).colorScheme.onBackground.withOpacity(0.6),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onBackground.withOpacity(0.6),
                 ),
               ),
               SizedBox(height: 24),
@@ -805,7 +856,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onBackground.withOpacity(0.8),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onBackground.withOpacity(0.8),
                   ),
                 ),
               ],
@@ -842,7 +895,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       onTap: () async {
                         await Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (context) => RecipeDetailScreen(recipeId: recipe.id),
+                            builder: (context) =>
+                                RecipeDetailScreen(recipeId: recipe.id),
                           ),
                         );
                         _loadRecipesFromBackend(silent: true);

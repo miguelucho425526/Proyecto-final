@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/recipe.dart';
 
 class ApiService {
-  static const String baseUrl = "http://10.1.113.219:8000/api/recetas";
+  static const String baseUrl = "http://localhost:8000/api/recetas";
 
   static const Map<String, String> headers = {
     "Content-Type": "application/json",

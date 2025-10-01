@@ -20,5 +20,4 @@ La aplicación permite gestionar una lista de recetas con sus ingredientes y pas
 
 ---
 
-## 📂 Estructura del proyecto
 

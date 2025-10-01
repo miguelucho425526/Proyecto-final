@@ -29,7 +29,7 @@ class AuthService {
         print('🔐 Intentando registrar usuario: $username');
         
         final response = await http.post(
-          Uri.parse('http://10.1.113.219:8000/auth/register'),
+          Uri.parse('http://localhost:8000/auth/register'), // 👈 CAMBIADO A LOCALHOST
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -65,7 +65,7 @@ class AuthService {
       } catch (e) {
         print('❌ Error en registro: $e');
         if (e is http.ClientException) {
-          throw Exception('Error de conexión: Verifica que el servidor esté ejecutándose');
+          throw Exception('Error de conexión: Verifica que el servidor esté ejecutándose en localhost:8000');
         } else if (e is Exception) {
           rethrow; // Ya tenemos un mensaje específico
         } else {
@@ -97,7 +97,7 @@ class AuthService {
         print('🔐 Intentando login usuario: $username');
         
         final response = await http.post(
-          Uri.parse('http://10.1.113.219:8000/auth/login'),
+          Uri.parse('http://localhost:8000/auth/login'), // 👈 CAMBIADO A LOCALHOST
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -127,7 +127,7 @@ class AuthService {
       } catch (e) {
         print('❌ Error en login: $e');
         if (e is http.ClientException) {
-          throw Exception('Error de conexión: Verifica que el servidor esté ejecutándose');
+          throw Exception('Error de conexión: Verifica que el servidor esté ejecutándose en localhost:8000');
         } else if (e is Exception) {
           rethrow;
         } else {
